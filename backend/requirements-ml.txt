@@ -1,0 +1,6 @@
+# Optional ML extras. The code degrades gracefully when these are absent:
+#   lightgbm -> sklearn HistGradientBoostingClassifier is used instead
+#   shap     -> tree feature-importance explanations are used instead
+# Install with:  pip install -r requirements.txt -r requirements-ml.txt
+lightgbm>=4.5
+shap>=0.46

@@ -1,0 +1,12 @@
+[project]
+name = "formedge-backend"
+version = "0.1.0"
+description = "FormEdge - horse racing prediction & analytics backend"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
