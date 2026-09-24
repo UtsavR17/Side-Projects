@@ -25,20 +25,47 @@ _robots: dict[str, robotparser.RobotFileParser | None] = {}
 
 
 def _robots_allowed(url: str) -> bool:
+    """Consult the site's robots.txt rules **as us** (our User-Agent).
+
+    Important: `RobotFileParser.read()` fetches robots.txt with Python's own
+    User-Agent, which bot-protected hosts (Cloudflare) answer with HTTP 403 —
+    causing an over-block even when the site's real robots.txt says `Allow: /`.
+    So we fetch it ourselves and parse the text.
+    """
     parsed = urlparse(url)
     origin = f"{parsed.scheme}://{parsed.netloc}"
     if origin not in _robots:
-        rp = robotparser.RobotFileParser(f"{origin}/robots.txt")
-        try:
-            rp.read()
-            _robots[origin] = rp
-        except Exception as exc:  # noqa: BLE001 — if robots.txt is unreachable, be conservative
-            logger.warning("robots.txt read failed for %s: %s", origin, exc)
-            _robots[origin] = None
+        _robots[origin] = _load_robots(origin)
     rp = _robots[origin]
+    if rp == "disallow-all":
+        return False
     if rp is None:
-        return True  # couldn't fetch rules; still polite via rate limiting + UA
+        return True  # no publishable rules; rely on rate limiting + clear UA
     return rp.can_fetch(settings.scrape_user_agent, url)
+
+
+def _load_robots(origin: str):
+    """Return a RobotFileParser, the sentinel "disallow-all", or None."""
+    try:
+        resp = httpx.get(
+            f"{origin}/robots.txt",
+            headers={"User-Agent": settings.scrape_user_agent},
+            timeout=15,
+            follow_redirects=True,
+        )
+    except httpx.HTTPError as exc:
+        logger.warning("robots.txt unreachable for %s: %s", origin, exc)
+        return None
+    if resp.status_code in (401, 403):
+        # RFC 9309: denial of the robots file means "assume fully disallowed".
+        logger.info("robots.txt denied (%s) for %s — treating as disallowed",
+                    resp.status_code, origin)
+        return "disallow-all"
+    if resp.status_code >= 400:
+        return None
+    rp = robotparser.RobotFileParser()
+    rp.parse(resp.text.splitlines())
+    return rp
 
 
 def _throttle(url: str) -> None:

@@ -343,3 +343,9 @@ cd backend; .\.venv\Scripts\python.exe -m pytest tests/test_simulator_engine.py 
 
 
 
+
+
+
+to run the app 
+- .\run-backend.ps1
+- .\run-frontend.ps1
