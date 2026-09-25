@@ -1,5 +1,7 @@
-"""Admin / data-quality view (§11): scrape flags + duplicate-horse merging."""
-from fastapi import APIRouter, Depends, HTTPException
+"""Admin / data-quality view (§11): scrape flags, duplicate merging, manual import."""
+import json
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -8,6 +10,8 @@ from app.db import get_db
 from app.models import DataQualityFlag, Horse, RaceEntry, User
 from app.security import get_current_admin
 from app.services.cache_keys import invalidate_all_profiles
+from pipeline.import_files import import_text
+from pipeline.parsing import parse_date
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -91,3 +95,52 @@ def merge_horses(body: MergeIn, _: User = Depends(get_current_admin), db: Sessio
         "target_id": target.id,
         "entries_moved": moved,
     }
+
+
+@router.post("/import")
+async def import_document(
+    request: Request,
+    kind: str = Query("auto", pattern="^(auto|fixtures-csv|results-csv|fixtures-html|results-html)$"),
+    default_date: str | None = Query(None, description="fallback date, YYYY-MM-DD"),
+    _: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """Import a human-supplied race card / results document.
+
+    Needed because the primary source (mtcjockeyclub.com) is behind Cloudflare
+    bot protection, so a person supplies what they legitimately viewed/saved.
+
+    Two ways to call it::
+
+        # raw body — send the saved page or CSV exactly as-is
+        curl -X POST "$API/api/admin/import?kind=fixtures-csv" \
+             -H "Authorization: Bearer $TOKEN" -H "Content-Type: text/csv" \
+             --data-binary @racecard.csv
+
+        # JSON envelope
+        {"content": "...", "kind": "auto", "filename": "card.html",
+         "default_date": "2026-05-12"}
+    """
+    raw = (await request.body()).decode("utf-8", errors="replace")
+    if not raw.strip():
+        raise HTTPException(400, "Empty request body")
+
+    label = request.headers.get("X-Filename", "")
+    payload = raw
+    if request.headers.get("content-type", "").startswith("application/json"):
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            raise HTTPException(400, "Invalid JSON body")
+        payload = data.get("content") or ""
+        kind = data.get("kind") or kind
+        label = data.get("filename") or label
+        default_date = data.get("default_date") or default_date
+        if not payload.strip():
+            raise HTTPException(400, "JSON body must include a non-empty 'content' field")
+
+    fallback = parse_date(default_date) if default_date else None
+    result = import_text(db, payload, kind=kind, default_date=fallback,
+                         label=label or "api-import")
+    invalidate_all_profiles()
+    return {"imported_by": "admin", **result}

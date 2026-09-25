@@ -3,7 +3,7 @@ sliced by distance bucket and track condition, incrementally per run."""
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import date, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -26,6 +26,28 @@ def _period_end(period: str, suffix: str) -> date | None:
         return None
 
 
+def _upsert_performance(db: Session, **fields) -> ModelPerformance:
+    """Insert or UPDATE the (model_name, period) row.
+
+    Upserting keeps repeated runs (hourly schedule, late result imports) from
+    piling up duplicate periods on the leaderboard.
+    """
+    row = db.scalar(
+        select(ModelPerformance).where(
+            ModelPerformance.model_name == fields["model_name"],
+            ModelPerformance.period == fields["period"],
+        )
+    )
+    if row is None:
+        row = ModelPerformance(**fields)
+        db.add(row)
+        return row
+    for key, value in fields.items():
+        setattr(row, key, value)
+    row.computed_at = datetime.utcnow()
+    return row
+
+
 def _slices(y_true, y_prob, idx_map: dict[str, list[int]]) -> dict:
     out = {}
     for name, idxs in sorted(idx_map.items()):
@@ -37,7 +59,14 @@ def _slices(y_true, y_prob, idx_map: dict[str, list[int]]) -> dict:
     return out
 
 
-def stage_evaluate(db: Session | None = None) -> dict:
+def stage_evaluate(db: Session | None = None, full: bool = False) -> dict:
+    """Score stored predictions against results.
+
+    Incremental by default: only races on/after the last covered date are
+    re-scored (so a late-imported result for the boundary meeting is picked up
+    and existing rows are updated in place). Pass ``full=True`` to re-score
+    every completed race that has predictions.
+    """
     own = db is None
     if own:
         db = SessionLocal()
@@ -72,11 +101,11 @@ def stage_evaluate(db: Session | None = None) -> dict:
         summary: dict[str, dict] = {}
         for model_name in model_names:
             per_race_map = preds_by_model_race[model_name]
-            until = covered.get(model_name)
+            until = None if full else covered.get(model_name)
             eligible = [
                 r for r in completed
                 if any((r.id, e.horse_id) in per_race_map for e in r.entries)
-                and (until is None or r.date.date() > until)
+                and (until is None or r.date.date() >= until)
             ]
             if not eligible:
                 continue
@@ -121,14 +150,15 @@ def stage_evaluate(db: Session | None = None) -> dict:
 
             period = (f"{eligible[0].date.date().isoformat()}.."
                       f"{eligible[-1].date.date().isoformat()} post-race")
-            db.add(ModelPerformance(
+            _upsert_performance(
+                db,
                 model_name=model_name, period=period, n_samples=m.get("n_samples", 0),
                 accuracy=m.get("accuracy"), precision=m.get("precision"),
                 recall=m.get("recall"), f1=m.get("f1"), roc_auc=m.get("roc_auc"),
                 log_loss=m.get("log_loss"),
                 by_distance_bucket=_slices(y_true, y_prob, slice_dist),
                 by_track_condition=_slices(y_true, y_prob, slice_cond),
-            ))
+            )
             summary[model_name] = {"races": len(eligible), "top1": top1,
                                    "roc_auc": m.get("roc_auc")}
 

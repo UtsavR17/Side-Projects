@@ -19,6 +19,7 @@ from app.db import SessionLocal
 from app.models import Horse, Jockey, Race, RaceEntry, RaceResult, RACE_SCHEDULED, Trainer
 from pipeline.clean import flag_issue, resolve_or_create
 from pipeline.http_client import fetch_html
+from pipeline.parsing import parse_date, parse_time
 
 logger = logging.getLogger(__name__)
 
@@ -152,28 +153,16 @@ def parse_results(html: str) -> tuple[list[dict], list[str]]:
 
 
 def _parse_time(raw: str | None) -> float | None:
-    if not raw:
-        return None
-    m = re.match(r"(\d+):(\d+(?:\.\d+)?)", raw)
-    if m:
-        return int(m.group(1)) * 60 + float(m.group(2))
-    try:
-        return float(raw)
-    except ValueError:
-        return None
+    """Delegate to the shared parser (keeps scraper + importer identical)."""
+    return parse_time(raw)
 
 
 # ---------------------------------------------------------------------------
 # Ingestion
 # ---------------------------------------------------------------------------
 def _parse_fixture_date(raw: str | None, fallback: datetime) -> datetime:
-    if raw:
-        for fmt in ("%Y-%m-%d", "%d %B %Y", "%d %b %Y", "%d %B %y", "%d %b %y"):
-            try:
-                return datetime.strptime(raw.strip(), fmt)
-            except ValueError:
-                continue
-    return fallback
+    """Kept as a thin wrapper so the scraper and the importer share one parser."""
+    return parse_date(raw, fallback)
 
 
 def ingest_fixtures(
@@ -185,18 +174,19 @@ def ingest_fixtures(
 
     for card in cards:
         race_dt = _parse_fixture_date(card.get("date"), fallback)
+        venue = (card.get("venue") or "Champ de Mars").strip()
         race = db.scalar(
             select(Race).where(
                 Race.date == race_dt,
                 Race.race_no == card["race_no"],
-                Race.venue == "Champ de Mars",
+                Race.venue == venue,
             )
         )
         if race is None:
             race = Race(
                 date=race_dt,
                 race_no=card["race_no"],
-                venue="Champ de Mars",
+                venue=venue,
                 status=RACE_SCHEDULED,
                 source_url=source_url,
             )

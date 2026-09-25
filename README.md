@@ -18,6 +18,8 @@ backend/
     services/          serializers, profiles, form stats, notifications, FCM
   pipeline/            background stages (NEVER triggered by API requests)
     scrape_mtc.py      polite fixtures/results scraper + ingestion
+    import_files.py    human-in-the-loop import (CSV or saved HTML pages)
+    parsing.py         shared date/time/number parsers (scraper + importer)
     clean.py           name normalization / entity resolution / flags
     features.py        horse_form_snapshots (leakage-free, precomputed)
     weather.py         Open-Meteo race-day weather enrichment
@@ -27,9 +29,35 @@ backend/
     ml/                train → predict → explain → evaluate (Prompt C)
   tests/               pytest suite (SQLite + in-memory cache fallback)
   seed_demo.py         SYNTHETIC demo data for local development
+docs/                  simulator-guide.md, data-import.md
 frontend/              Next.js (App Router, ISR revalidate=300) dashboard
 docker-compose.yml     api + worker + postgres + redis + web
 ```
+
+## Data sources — read this before expecting live data
+
+Checked directly (2026-09):
+
+| Source | Status | Consequence |
+|---|---|---|
+| `mtcjockeyclub.com` (plan's primary) | `robots.txt` returns **HTTP 403 + Cloudflare JS challenge** | Automated scraping is off the table (RFC 9309: a denied robots file means stay out). I do not attempt to bypass bot protection |
+| `supertote.mu` | robots allows crawling, but race data is rendered **client-side** (one JS bundle) | Nothing server-side to parse without reverse-engineering their app — not done |
+| `mauritiusturfclub.com` | DNS/connect failure | Not a usable source |
+| Open-Meteo (weather) | 200 OK, free | ✅ Works, used by the `weather` stage |
+
+So the platform ingests real data through **two** paths, both feeding the same
+downstream pipeline:
+
+```powershell
+.\run-pipeline.ps1 scrape                          # if/when a source permits automation
+.\run-pipeline.ps1 import .\incoming\*.csv         # human-supplied CSV or saved HTML
+```
+
+Full schema, CLI/API examples and troubleshooting:
+**[docs/data-import.md](docs/data-import.md)**. The import path is deliberately
+idempotent and records every miss in `data_quality_flags` rather than inventing
+data.
+
 
 ## Core contract (why it's fast)
 
@@ -44,7 +72,8 @@ not computed per request.
 
 | Stage | What it does | Notifies |
 |---|---|---|
-| `scrape` | Polite MTC fetch (robots.txt, rate limit, HTML disk cache), parse, entity-resolve, upsert; flags parse issues; detects >10% odds moves | fixtures, prediction_updated |
+| `scrape` | Polite fetch (robots.txt honoured, rate limit, HTML disk cache), parse, entity-resolve, upsert; flags parse issues; detects >10% odds moves | fixtures, prediction_updated |
+| `import <files>` | Human-supplied CSVs / saved HTML pages → same ingest path; idempotent; misses flagged | – |
 | `weather` | Open-Meteo forecast → `races.weather` | – |
 | `features` | `horse_form_snapshots` for every horse in an upcoming race (strictly pre-race history) | – |
 | `train` | RF + LightGBM(+sklearn fallback) + Elo; **time-based** holdout; distance/going slices; refit all history → joblib artifacts | – |
@@ -65,14 +94,17 @@ Monday digest).
 `/api/predictions/history`, `/api/leaderboard`, `/api/notifications` (JWT),
 `GET|PUT /api/me/preferences`, `POST /api/simulator/what-if`,
 `GET /api/events` (SSE), `POST /api/auth/register|login`,
-`/api/admin/flags`, `/api/admin/horses/merge` (admin JWT), `GET /api/health`.
-Interactive docs at `/api/docs`.
+`/api/admin/flags`, `/api/admin/horses/merge`, `/api/admin/import` (admin JWT),
+`GET /api/health`. Interactive docs at `/api/docs`.
 
 ## Assumptions & limitations (be aware)
 
-- **Scraper parsers are heuristic.** The MTC site structure isn't guaranteed;
-  unparseable pages are flagged in `data_quality_flags` (admin view) instead of
-  crashing runs. Check each source's ToS/robots.txt before scaling up scraping.
+- **The primary source blocks bots.** `mtcjockeyclub.com` answers `robots.txt`
+  with 403 (Cloudflare challenge), so the scraper is intentionally inert there
+  and real data arrives via the human-in-the-loop import instead (see
+  [docs/data-import.md](docs/data-import.md)). Scraper parsers are heuristic:
+  anything unrecognised is flagged in `data_quality_flags` rather than crashing
+  a run. Always check a source's ToS/robots.txt before automating it.
 - **Place target = top-3 finish**; Elo place probability uses a documented
   heuristic `1-(1-p)^1.8`.
 - **Race simulator** is an explicit heuristic re-weighting (distance/going fit
@@ -95,8 +127,12 @@ Interactive docs at `/api/docs`.
   Redis cache warming from day one
 - ✅ Advanced: boosting model, ensemble weighting from `model_performance`,
   SHAP explanations, performance slices, what-if simulator, notification core
+- ✅ Real-data ingestion: human-in-the-loop CSV / saved-HTML import (CLI + admin
+  API), idempotent with data-quality flagging; `evaluate` upserts and re-scores
+  late-arriving results
 - ⏳ Deferred: Flutter mobile (Prompt E), Web Push, jockey/trainer combo
-  features, track-bias detection, media sentiment, NN model
+  features, track-bias detection, media sentiment, NN model; automated scraping
+  of MTC pending an official feed or permission
 
 ## Quickstart (Docker — recommended)
 
