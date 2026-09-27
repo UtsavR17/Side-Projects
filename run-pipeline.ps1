@@ -2,6 +2,7 @@
 #   .\run-pipeline.ps1                           # full cycle
 #   .\run-pipeline.ps1 train predict             # selected stages
 #   .\run-pipeline.ps1 import .\incoming\*.csv   # import CSVs/pages, then refresh
+#   .\run-pipeline.ps1 watch                     # import whatever is in .\incoming now
 # `scrape`/`weather` need internet access; failures are non-fatal.
 param([Parameter(ValueFromRemainingArguments = $true)][string[]]$CliArgs)
 
@@ -24,6 +25,20 @@ if ($CliArgs -and $CliArgs[0] -eq 'import') {
     }
     Write-Host "=== import: $($files -join ', ') ===" -ForegroundColor Cyan
     & .\.venv\Scripts\python.exe -m pipeline.import_files @files
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    foreach ($stage in @('features', 'predict', 'explain', 'evaluate', 'warm')) {
+        Write-Host "=== $stage ===" -ForegroundColor Cyan
+        & .\.venv\Scripts\python.exe -m pipeline.run --stage $stage
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    }
+    exit 0
+}
+
+# `watch` — one-off scan of the inbox folder (files dropped by hand or by the
+# browser capture bookmarklet), then refresh what depends on them.
+if ($CliArgs -and $CliArgs[0] -eq 'watch') {
+    Write-Host '=== inbox scan ===' -ForegroundColor Cyan
+    & .\.venv\Scripts\python.exe -m pipeline.watch_inbox --once
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     foreach ($stage in @('features', 'predict', 'explain', 'evaluate', 'warm')) {
         Write-Host "=== $stage ===" -ForegroundColor Cyan

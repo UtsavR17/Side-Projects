@@ -29,7 +29,8 @@ backend/
     ml/                train → predict → explain → evaluate (Prompt C)
   tests/               pytest suite (SQLite + in-memory cache fallback)
   seed_demo.py         SYNTHETIC demo data for local development
-docs/                  simulator-guide.md, data-import.md
+docs/                  simulator-guide.md, data-import.md, data-sourcing-options.md
+tools/                 formedge-capture.js (browser capture bookmarklet)
 frontend/              Next.js (App Router, ISR revalidate=300) dashboard
 docker-compose.yml     api + worker + postgres + redis + web
 ```
@@ -45,18 +46,22 @@ Checked directly (2026-09):
 | `mauritiusturfclub.com` | DNS/connect failure | Not a usable source |
 | Open-Meteo (weather) | 200 OK, free | ✅ Works, used by the `weather` stage |
 
-So the platform ingests real data through **two** paths, both feeding the same
+So the platform ingests real data through **three** paths, all feeding the same
 downstream pipeline:
 
 ```powershell
 .\run-pipeline.ps1 scrape                          # if/when a source permits automation
 .\run-pipeline.ps1 import .\incoming\*.csv         # human-supplied CSV or saved HTML
+.\run-pipeline.ps1 watch                           # import whatever is in .\incoming now
 ```
 
-Full schema, CLI/API examples and troubleshooting:
-**[docs/data-import.md](docs/data-import.md)**. The import path is deliberately
-idempotent and records every miss in `data_quality_flags` rather than inventing
-data.
+Don't want to type data in? Use the **browser capture bookmarklet**
+(`tools/formedge-capture.js`): while you view a page as a human, one click sends
+the page (or just the table you selected) to your local API. Full option
+analysis — official permission, licensed vendors, local media, capture
+automation, with an email template — is in
+**[docs/data-sourcing-options.md](docs/data-sourcing-options.md)**; CSV schema
+and CLI/API details are in **[docs/data-import.md](docs/data-import.md)**.
 
 
 ## Core contract (why it's fast)

@@ -43,11 +43,20 @@ logger = logging.getLogger(__name__)
 SOURCE = "manual-import"
 
 # --------------------------------------------------------------------------- CSV
+def _dialect(text: str):
+    """Sniff the delimiter so pasted spreadsheet/clipboard data (TSV) works too."""
+    sample = "\n".join(text.splitlines()[:20])[:2000]
+    try:
+        return csv.Sniffer().sniff(sample, delimiters=",\t;|")
+    except csv.Error:
+        return csv.excel
+
+
 def load_fixtures_csv(text: str) -> tuple[list[dict], list[str]]:
     """Group fixture CSV rows into race cards shaped for `ingest_fixtures`."""
     warnings: list[str] = []
     cards: dict[tuple[str, int], dict] = {}
-    reader = csv.DictReader(io.StringIO(text))
+    reader = csv.DictReader(io.StringIO(text), dialect=_dialect(text))
     if not reader.fieldnames:
         return [], ["CSV has no header row"]
 
@@ -102,7 +111,7 @@ def load_results_csv(text: str) -> tuple[list[dict], list[str]]:
     """Parse a results CSV into the row shape `ingest_results_rows` expects."""
     warnings: list[str] = []
     rows: list[dict] = []
-    reader = csv.DictReader(io.StringIO(text))
+    reader = csv.DictReader(io.StringIO(text), dialect=_dialect(text))
     if not reader.fieldnames:
         return [], ["CSV has no header row"]
 

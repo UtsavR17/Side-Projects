@@ -8,6 +8,7 @@ from pipeline.import_files import (
     import_text,
     ingest_results_rows,
     load_fixtures_csv,
+    load_results_csv,
 )
 from pipeline.parsing import parse_date, parse_time
 
@@ -63,6 +64,37 @@ def test_load_fixtures_csv_reports_bad_rows():
     cards, warnings = load_fixtures_csv("date,race_no,horse\n2026-05-12,,Ghost\n")
     assert cards == []
     assert any("missing race_no/horse" in w for w in warnings)
+
+
+TAB_SEPARATED = (
+    "date\trace_no\thorse\tjockey\tbarrier\tweight\tsp\n"
+    "2026-05-12\t3\tBelle Isle\tJ. Smith\t1\t55\t3.5\n"
+    "2026-05-12\t3\tCafe Noir\tA. Test\t2\t54.5\t5\n"
+)
+
+SEMICOLON_SEPARATED = (
+    "date;race_no;horse;finish_position;margin\n"
+    "12/05/2026;3;Belle Isle;1;1.2L\n"
+    "12/05/2026;3;Cafe Noir;2;0.5L\n"
+)
+
+
+def test_tab_separated_paste_is_supported():
+    """Data copied straight out of a browser table (TSV) must import."""
+    cards, warnings = load_fixtures_csv(TAB_SEPARATED)
+    assert warnings == []
+    assert len(cards) == 1
+    assert cards[0]["race_no"] == 3
+    assert cards[0]["entries"][0]["horse"] == "Belle Isle"
+    assert cards[0]["entries"][0]["odds"] == 3.5      # via the "sp" alias
+
+
+def test_semicolon_separated_results_are_supported():
+    rows, warnings = load_results_csv(SEMICOLON_SEPARATED)
+    assert warnings == []
+    assert [r["position"] for r in rows] == [1, 2]
+    assert detect_kind(TAB_SEPARATED) == "fixtures-csv"
+    assert detect_kind(SEMICOLON_SEPARATED) == "results-csv"
 
 
 def test_fixtures_csv_import_creates_races_and_resolves_names(db):

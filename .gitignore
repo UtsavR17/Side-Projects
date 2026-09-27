@@ -12,6 +12,8 @@ htmlcov/
 # Data / artifacts
 backend/raw_cache/
 backend/ml_artifacts/
+backend/incoming/
+incoming/
 backend/uvicorn.*.log
 *.db
 *.db-wal
