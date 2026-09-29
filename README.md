@@ -29,7 +29,8 @@ backend/
     ml/                train → predict → explain → evaluate (Prompt C)
   tests/               pytest suite (SQLite + in-memory cache fallback)
   seed_demo.py         SYNTHETIC demo data for local development
-docs/                  simulator-guide.md, data-import.md, data-sourcing-options.md
+docs/                  simulator-guide.md, data-import.md, data-sourcing-options.md,
+                       outreach-emails.md
 tools/                 formedge-capture.js (browser capture bookmarklet)
 frontend/              Next.js (App Router, ISR revalidate=300) dashboard
 docker-compose.yml     api + worker + postgres + redis + web
@@ -122,6 +123,9 @@ Monday digest).
 - `seed_demo.py` creates **synthetic, clearly-labelled** data only. Demo odds are
   derived from each horse's synthetic true ability, so model metrics on demo
   data look near-perfect — real-world numbers will be far more modest.
+  **Keep demo and real data in separate databases** (different `DATABASE_URL`):
+  the demo calendar uses real Saturday dates, so importing a genuine MTC meeting
+  on the same day+race number merges into the demo race.
 - SQLite (tests/dev) uses WAL + `foreign_keys=ON`; production uses Postgres.
 - Auth: PBKDF2-SHA256 (390k iters) + JWT (set a strong `JWT_SECRET`).
 

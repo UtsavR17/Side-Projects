@@ -79,6 +79,37 @@ crawler-denying site in automation, and check each source's terms.
 
 ---
 
+## 2b. Official MTC race pages and result PDFs (dedicated parsers)
+
+Two MTC document types are parsed properly — no generic heuristics needed:
+
+| Document | How you get it | Key it produces |
+|---|---|---|
+| Race page HTML (`table.race-card-mtc`) | open the race in your browser → `Ctrl+S → Webpage, HTML only` | race meta (meeting no, name, distance, class, prize, win time), runners with **trainer, jockey (+claim kg), barrier, weight, SP, official rating, gear, body weight + change, MTC horse id**, finish position, margin, time, Win/Place dividends, **tote dividend ladder** (Swinger/Exacta/Trifecta/Quartet) and **sectional splits** |
+| Result PDF (`Race-Result-<meeting>-R<n>.pdf`) | click the race's download link | same runner/result fields (trainer and jockey come out as separate columns), race header (time, name, class, distance, prize, winning time) |
+
+Both are detected automatically (`kind: mtc-html` / `mtc-pdf`) and are
+**idempotent** — importing the HTML page and then the PDF for the same race
+updates the same rows rather than duplicating them.
+
+```powershell
+# from the repo root — your saved files
+.\run-pipeline.ps1 import ".\Horses data\*.pdf" ".\Horses data\*.html"
+```
+
+```bash
+# or straight to the API (admin JWT); PDFs go as raw bytes
+curl -X POST "http://127.0.0.1:8000/api/admin/import?kind=auto" \
+     -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/pdf" \
+     -H "X-Filename: Race-Result-392-R1.pdf" --data-binary @Race-Result-392-R1.pdf
+```
+
+Matching is by **MTC horse id first**, then normalised name, so repeated
+downloads strengthen the same horse records instead of creating duplicates.
+
+
+---
+
 ## 3. Running an import
 
 ### PowerShell helper (repo root)
@@ -147,6 +178,7 @@ immediately.
 | Symptom | Cause | Fix |
 |---|---|---|
 | `no usable rows found in CSV` flag | Header renamed, or rows missing `race_no`/`horse` | Only `date`, `race_no`, `horse` are mandatory — see §1 |
+| Import says `races_updated` for a race you never imported | A demo/other race already occupies that `date` + `race_no` | Keep demo and real data in **separate databases** — both claim a Saturday fixture, so they merge. Use one `DATABASE_URL` for demo, another for real data |
 | `unknown_horse` flag | Result names a horse that isn't in the DB | Import fixtures first (that's what creates horses), then results |
 | `unmatched_entry` flag | Horse exists but isn't on that race's card | Check race number/date, or that the fixtures import created that card |
 | `missing_race` flag | Results imported before the card | Import fixtures first |

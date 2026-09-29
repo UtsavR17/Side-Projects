@@ -169,6 +169,10 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--stage", default="all", choices=[*STAGES, "all"])
     args = parser.parse_args(argv)
 
+    from app.db import init_db
+
+    init_db()   # keep an existing database in step with the models
+
     if args.stage == "all":
         for name in FULL_ORDER:
             run_stage(name)

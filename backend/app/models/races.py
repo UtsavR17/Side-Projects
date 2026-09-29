@@ -33,6 +33,12 @@ class Race(Base):
     track_condition: Mapped[str | None] = mapped_column(String(50))
     weather: Mapped[str | None] = mapped_column(String(120))
     going: Mapped[str | None] = mapped_column(String(50))
+    meeting_no: Mapped[int | None] = mapped_column(Integer)      # MTC meeting number
+    race_time_label: Mapped[str | None] = mapped_column(String(10))  # "12:30"
+    prize: Mapped[str | None] = mapped_column(String(60))
+    win_time_s: Mapped[float | None] = mapped_column(Float)      # winner's time in seconds
+    tote_dividends: Mapped[dict | None] = mapped_column(JSON)    # {"Win": ..., "Place": [...]}
+    sectional_times: Mapped[dict | None] = mapped_column(JSON)   # {"1000m": 59.21, ...}
     status: Mapped[str] = mapped_column(String(20), default="scheduled", index=True)
     source_url: Mapped[str | None] = mapped_column(String(500))
     notes: Mapped[str | None] = mapped_column(Text)
@@ -56,6 +62,13 @@ class RaceEntry(Base):
     barrier: Mapped[int | None] = mapped_column(Integer)
     weight_kg: Mapped[float | None] = mapped_column(Float)
     odds: Mapped[float | None] = mapped_column(Float)
+    # MTC-specific official fields (from the form guide / result export)
+    saddle_no: Mapped[int | None] = mapped_column(Integer)
+    sp_odds: Mapped[float | None] = mapped_column(Float)   # official starting price
+    rating: Mapped[int | None] = mapped_column(Integer)    # official rating at race time
+    gear: Mapped[str | None] = mapped_column(String(30))   # equipment code (XNA, SN *, ...)
+    body_weight_kg: Mapped[float | None] = mapped_column(Float)   # HWT
+    body_weight_delta: Mapped[float | None] = mapped_column(Float)  # HWT change vs last run
     scratched: Mapped[bool] = mapped_column(Boolean, default=False)
     notes: Mapped[str | None] = mapped_column(Text)
 
@@ -77,6 +90,8 @@ class RaceResult(Base):
     margin: Mapped[str | None] = mapped_column(String(50))
     time_s: Mapped[float | None] = mapped_column(Float)
     sp_odds: Mapped[float | None] = mapped_column(Float)
+    win_dividend: Mapped[float | None] = mapped_column(Float)
+    place_dividend: Mapped[float | None] = mapped_column(Float)
     dn_category: Mapped[str | None] = mapped_column(String(20))
     stewards_note: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

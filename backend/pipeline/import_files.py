@@ -36,11 +36,19 @@ from sqlalchemy.orm import Session
 from app.db import SessionLocal
 from app.models import RACE_COMPLETED, Horse, Race, RaceEntry, RaceResult
 from pipeline.clean import flag_issue, normalize_name, resolve_or_create
+from pipeline.mtc_ingest import ingest_mtc_race
+from pipeline.mtc_parse import (
+    looks_like_mtc_page,
+    looks_like_mtc_result_pdf,
+    parse_mtc_race_page,
+    parse_mtc_result_pdf,
+)
 from pipeline.parsing import iso_datetime, parse_date, parse_time, row_get, to_float, to_int
 from pipeline.scrape_mtc import ingest_fixtures, parse_fixtures, parse_results
 
 logger = logging.getLogger(__name__)
 SOURCE = "manual-import"
+MTC_KINDS = ("mtc-html", "mtc-pdf")
 
 # --------------------------------------------------------------------------- CSV
 def _dialect(text: str):
@@ -245,11 +253,31 @@ def ingest_results_rows(db: Session, rows: list[dict]) -> dict:
 # ------------------------------------------------------------------ dispatcher
 def import_text(db: Session, text: str, kind: str = "auto",
                 default_date: datetime | None = None, label: str = "") -> dict:
-    """Import one document (CSV or saved HTML). Returns stats + warnings."""
+    """Import one document (CSV, saved HTML, or extracted PDF text)."""
     resolved = detect_kind(text, label) if kind in ("auto", "", None) else kind
     warnings: list[str] = []
     stats: dict = {}
     source_ref = f"{SOURCE}:{label or 'inline'}"
+
+    # Official MTC race pages and result PDFs get their own dedicated parsers,
+    # checked BEFORE the CSV sniffer (layout text is not comma-separated).
+    if looks_like_mtc_page(text):
+        parsed, warnings = parse_mtc_race_page(text, default_date=default_date)
+        resolved = "mtc-html"
+    elif looks_like_mtc_result_pdf(text) or resolved == "mtc-pdf":
+        parsed, warnings = parse_mtc_result_pdf(text, default_date=default_date)
+        resolved = "mtc-pdf"
+    elif resolved == "mtc-html":
+        parsed, warnings = parse_mtc_race_page(text, default_date=default_date)
+    else:
+        parsed = None
+
+    if parsed is not None:
+        stats = ingest_mtc_race(db, parsed, source_label=label or "inline",
+                                default_date=default_date) if parsed else {}
+        for warning in warnings:
+            flag_issue(db, SOURCE, "parse_warning", warning, context={"file": label})
+        return {"kind": resolved, "warnings": warnings, **(stats or {})}
 
     if resolved == "fixtures-csv":
         cards, warnings = load_fixtures_csv(text)
@@ -278,9 +306,23 @@ def import_text(db: Session, text: str, kind: str = "auto",
     return {"kind": resolved, "warnings": warnings, **stats}
 
 
+def import_bytes(db: Session, data: bytes, kind: str = "auto",
+                 default_date: datetime | None = None, label: str = "") -> dict:
+    """Import raw bytes: PDFs go to the MTC result parser, everything else to text."""
+    if data.lstrip().startswith(b"%PDF"):
+        parsed, warnings = parse_mtc_result_pdf(data, default_date=default_date)
+        stats = ingest_mtc_race(db, parsed, source_label=label or "inline",
+                                default_date=default_date) if parsed else {}
+        for warning in warnings:
+            flag_issue(db, SOURCE, "parse_warning", warning, context={"file": label})
+        return {"kind": "mtc-pdf", "warnings": warnings, **(stats or {})}
+    return import_text(db, data.decode("utf-8", errors="replace"), kind=kind,
+                       default_date=default_date, label=label)
+
+
 def stage_import(paths: list[str], kind: str = "auto",
                  default_date: datetime | None = None) -> dict:
-    """Import a set of saved pages / CSVs through the shared ingest path."""
+    """Import a set of saved pages / CSVs / PDFs through the shared ingest path."""
     db = SessionLocal()
     results = []
     try:
@@ -289,9 +331,8 @@ def stage_import(paths: list[str], kind: str = "auto",
             if not path.exists():
                 results.append({"file": str(path), "error": "file not found"})
                 continue
-            text = path.read_text(encoding="utf-8", errors="replace")
-            outcome = import_text(db, text, kind=kind, default_date=default_date,
-                                  label=path.name)
+            outcome = import_bytes(db, path.read_bytes(), kind=kind,
+                                   default_date=default_date, label=path.name)
             outcome["file"] = path.name
             results.append(outcome)
             logger.info("imported %s -> %s", path.name, outcome)
@@ -301,19 +342,22 @@ def stage_import(paths: list[str], kind: str = "auto",
 
 
 def main(argv: list[str] | None = None) -> None:
-    logging.basicConfig(level=logging.INFO,
-                        format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     parser = argparse.ArgumentParser(
-        description="Import human-supplied race cards / results (CSV or saved HTML)."
+        description="Import human-supplied race cards / results (CSV, saved HTML or PDF)."
     )
     parser.add_argument("files", nargs="+", help="CSV or saved .html files to import")
     parser.add_argument("--kind", default="auto",
                         choices=["auto", "fixtures-csv", "results-csv",
-                                 "fixtures-html", "results-html"])
+                                 "fixtures-html", "results-html",
+                                 "mtc-html", "mtc-pdf"])
     parser.add_argument("--date", default=None,
                         help="fallback date (YYYY-MM-DD) for files that omit one")
     args = parser.parse_args(argv)
 
+    from app.db import init_db
+
+    init_db()   # ensure tables exist and any new columns are added
     fallback = parse_date(args.date) if args.date else None
     for item in stage_import(args.files, kind=args.kind, default_date=fallback)["files"]:
         print(item)

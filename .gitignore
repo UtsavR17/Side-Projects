@@ -15,6 +15,7 @@ backend/ml_artifacts/
 backend/incoming/
 incoming/
 backend/uvicorn.*.log
+Horses data/
 *.db
 *.db-wal
 *.db-shm

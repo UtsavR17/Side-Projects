@@ -53,7 +53,59 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def init_db() -> None:
-    """Create tables if they don't exist (MVP substitute for migrations)."""
+    """Create tables if they don't exist, then add any columns added since."""
     from app import models  # noqa: F401  (register mappings)
 
     Base.metadata.create_all(bind=engine)
+    light_migrations()
+
+
+# Columns introduced after the first release. create_all() never ALTERs an
+# existing table, so older databases need these added explicitly.
+# (Lightweight stand-in for Alembic — portable across SQLite and Postgres.)
+_ADDED_COLUMNS: dict[str, dict[str, str]] = {
+    "horses": {
+        "external_id": "VARCHAR(40)",
+    },
+    "races": {
+        "meeting_no": "INTEGER",
+        "race_time_label": "VARCHAR(10)",
+        "prize": "VARCHAR(60)",
+        "win_time_s": "FLOAT",
+        "tote_dividends": "JSON",
+        "sectional_times": "JSON",
+    },
+    "race_entries": {
+        "saddle_no": "INTEGER",
+        "sp_odds": "FLOAT",
+        "rating": "INTEGER",
+        "gear": "VARCHAR(30)",
+        "body_weight_kg": "FLOAT",
+        "body_weight_delta": "FLOAT",
+    },
+    "race_results": {
+        "sp_odds": "FLOAT",
+        "win_dividend": "FLOAT",
+        "place_dividend": "FLOAT",
+    },
+}
+
+
+def light_migrations() -> list[str]:
+    """Add missing columns in place; returns the list of columns added."""
+    from sqlalchemy import inspect, text
+
+    added: list[str] = []
+    inspector = inspect(engine)
+    tables = set(inspector.get_table_names())
+    for table, columns in _ADDED_COLUMNS.items():
+        if table not in tables:
+            continue
+        existing = {col["name"] for col in inspector.get_columns(table)}
+        for name, ddl in columns.items():
+            if name in existing:
+                continue
+            with engine.begin() as conn:
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
+            added.append(f"{table}.{name}")
+    return added

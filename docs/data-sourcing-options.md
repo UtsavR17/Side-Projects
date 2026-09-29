@@ -117,6 +117,14 @@ you can see as a human, including the MTC stats pages.
 This is the pragmatic middle path: **you** satisfy the bot check by browsing
 normally; the automation only handles the *capture* into your own database.
 
+### 0. MTC-specific parsers (done — see `docs/data-import.md` §2b)
+
+The MTC race page and the per-race result PDF both have dedicated parsers now, so
+the format you save or download is understood field-by-field: trainers, jockeys
+(with claims), barriers, weights, SP, **official ratings**, gear, horse body
+weights, MTC horse ids, margins, times, sectional splits and the tote dividend
+ladder. Verified against your real saved page and PDF.
+
 ### 1. Inbox watcher (already in the repo)
 
 Drop any `.csv` / `.html` / `.txt` file into `incoming/` and run:

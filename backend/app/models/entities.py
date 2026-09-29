@@ -41,6 +41,7 @@ class Horse(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     name_norm: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
+    external_id: Mapped[str | None] = mapped_column(String(40), index=True)  # e.g. MTC horse id
     sex: Mapped[str | None] = mapped_column(String(1))
     sire: Mapped[str | None] = mapped_column(String(200))
     dam: Mapped[str | None] = mapped_column(String(200))

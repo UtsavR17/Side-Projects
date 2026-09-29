@@ -23,12 +23,12 @@ import time
 from pathlib import Path
 
 from app.db import SessionLocal
-from pipeline.import_files import import_text
+from pipeline.import_files import import_bytes
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_INBOX = Path("incoming")
-WATCHED_SUFFIXES = {".csv", ".html", ".htm", ".txt"}
+WATCHED_SUFFIXES = {".csv", ".html", ".htm", ".txt", ".pdf"}
 
 
 def _classify_import(result: dict) -> bool:
@@ -54,13 +54,13 @@ def stage_inbox(inbox: Path | None = None) -> dict:
         for path in sorted(inbox.iterdir()):
             if not path.is_file() or path.suffix.lower() not in WATCHED_SUFFIXES:
                 continue
-            text = path.read_text(encoding="utf-8", errors="replace")
-            if not text.strip():
+            data = path.read_bytes()
+            if not data.strip():
                 shutil.move(str(path), failed_dir / path.name)
                 failed.append({"file": path.name, "error": "empty file"})
                 continue
             try:
-                result = import_text(db, text, kind="auto", label=path.name)
+                result = import_bytes(db, data, kind="auto", label=path.name)
             except Exception as exc:  # noqa: BLE001 — a bad file must not kill the loop
                 logger.exception("inbox import failed for %s", path.name)
                 shutil.move(str(path), failed_dir / path.name)
@@ -102,6 +102,9 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     inbox = Path(args.inbox) if args.inbox else None
+    from app.db import init_db
+
+    init_db()
     if args.once:
         print(stage_inbox(inbox))
     else:

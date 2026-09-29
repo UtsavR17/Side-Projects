@@ -10,7 +10,7 @@ from app.db import get_db
 from app.models import DataQualityFlag, Horse, RaceEntry, User
 from app.security import get_current_admin
 from app.services.cache_keys import invalidate_all_profiles
-from pipeline.import_files import import_text
+from pipeline.import_files import import_bytes
 from pipeline.parsing import parse_date
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -121,12 +121,12 @@ async def import_document(
         {"content": "...", "kind": "auto", "filename": "card.html",
          "default_date": "2026-05-12"}
     """
-    raw = (await request.body()).decode("utf-8", errors="replace")
-    if not raw.strip():
+    raw_bytes = await request.body()
+    raw = raw_bytes.decode("utf-8", errors="replace")
+    if not raw_bytes.strip():
         raise HTTPException(400, "Empty request body")
 
     label = request.headers.get("X-Filename", "")
-    payload = raw
     if request.headers.get("content-type", "").startswith("application/json"):
         try:
             data = json.loads(raw)
@@ -138,9 +138,10 @@ async def import_document(
         default_date = data.get("default_date") or default_date
         if not payload.strip():
             raise HTTPException(400, "JSON body must include a non-empty 'content' field")
+        raw_bytes = payload.encode("utf-8")
 
     fallback = parse_date(default_date) if default_date else None
-    result = import_text(db, payload, kind=kind, default_date=fallback,
-                         label=label or "api-import")
+    result = import_bytes(db, raw_bytes, kind=kind, default_date=fallback,
+                          label=label or "api-import")
     invalidate_all_profiles()
     return {"imported_by": "admin", **result}
