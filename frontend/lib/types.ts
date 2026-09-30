@@ -9,6 +9,10 @@ export interface RaceSummary {
   track_condition: string | null;
   weather: string | null;
   status: string;
+  meeting_no?: number | null;
+  race_time_label?: string | null;
+  prize?: string | null;
+  win_time_s?: number | null;
 }
 
 export interface Explanation {
@@ -31,12 +35,20 @@ export interface Prediction {
 
 export interface Entry {
   id: number;
+  saddle_no?: number | null;
   barrier: number | null;
   weight_kg: number | null;
   odds: number | null;
+  sp_odds?: number | null;
+  rating?: number | null;
+  gear?: string | null;
+  body_weight_kg?: number | null;
+  body_weight_delta?: number | null;
   scratched: boolean;
+  notes?: string | null;
   horse_id: number;
   horse_name: string;
+  horse_external_id?: string | null;
   jockey_id: number | null;
   jockey_name: string | null;
   trainer_id: number | null;
@@ -45,6 +57,9 @@ export interface Entry {
     finish_position: number | null;
     margin: string | null;
     time_s: number | null;
+    sp_odds?: number | null;
+    win_dividend?: number | null;
+    place_dividend?: number | null;
     dn_category: string | null;
   } | null;
   predictions: Prediction[];
@@ -52,11 +67,14 @@ export interface Entry {
 
 export interface RaceDetail extends RaceSummary {
   entries: Entry[];
+  tote_dividends?: Record<string, Record<string, number>>;
+  sectional_times?: Record<string, number>;
 }
 
 export interface HorseProfile {
   id: number;
   name: string;
+  external_id?: string | null;
   sex: string | null;
   sire: string | null;
   dam: string | null;
@@ -98,7 +116,13 @@ export interface FormRow {
   finish_position: number | null;
   dn_category: string | null;
   odds: number | null;
+  sp_odds?: number | null;
   weight_kg: number | null;
+  rating?: number | null;
+  gear?: string | null;
+  body_weight_kg?: number | null;
+  body_weight_delta?: number | null;
+  barrier?: number | null;
   jockey_name: string | null;
   race_id: number;
 }

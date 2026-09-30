@@ -33,6 +33,10 @@ def race_summary_dict(race: Race) -> dict:
         "track_condition": race.track_condition,
         "weather": race.weather,
         "status": race.status,
+        "meeting_no": race.meeting_no,
+        "race_time_label": race.race_time_label,
+        "prize": race.prize,
+        "win_time_s": race.win_time_s,
     }
 
 
@@ -58,17 +62,28 @@ def race_detail_dict(db: Session, race: Race) -> dict:
         preds_by_horse.setdefault(p.horse_id, []).append(p)
 
     out = race_summary_dict(race)
+    # Official extras captured from the MTC page / result PDF (may be empty).
+    out["tote_dividends"] = race.tote_dividends or {}
+    out["sectional_times"] = race.sectional_times or {}
     out["entries"] = []
     for e in sorted(entries, key=lambda x: (x.barrier or 99, x.id)):
         out["entries"].append(
             {
                 "id": e.id,
+                "saddle_no": e.saddle_no,
                 "barrier": e.barrier,
                 "weight_kg": e.weight_kg,
                 "odds": e.odds,
+                "sp_odds": e.sp_odds,
+                "rating": e.rating,
+                "gear": e.gear,
+                "body_weight_kg": e.body_weight_kg,
+                "body_weight_delta": e.body_weight_delta,
                 "scratched": e.scratched,
+                "notes": e.notes,
                 "horse_id": e.horse_id,
                 "horse_name": e.horse.name if e.horse else "?",
+                "horse_external_id": e.horse.external_id if e.horse else None,
                 "jockey_id": e.jockey_id,
                 "jockey_name": e.jockey.name if e.jockey else None,
                 "trainer_id": e.trainer_id,
@@ -78,6 +93,9 @@ def race_detail_dict(db: Session, race: Race) -> dict:
                         "finish_position": e.result.finish_position,
                         "margin": e.result.margin,
                         "time_s": e.result.time_s,
+                        "sp_odds": e.result.sp_odds,
+                        "win_dividend": e.result.win_dividend,
+                        "place_dividend": e.result.place_dividend,
                         "dn_category": e.result.dn_category,
                     }
                     if e.result

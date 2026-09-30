@@ -33,6 +33,7 @@ def horse_profile_dict(db: Session, horse: Horse) -> dict:
     return {
         "id": horse.id,
         "name": horse.name,
+        "external_id": horse.external_id,
         "sex": horse.sex,
         "sire": horse.sire,
         "dam": horse.dam,
@@ -67,7 +68,13 @@ def horse_profile_dict(db: Session, horse: Horse) -> dict:
                 "finish_position": result.finish_position if result else None,
                 "dn_category": result.dn_category if result else None,
                 "odds": entry.odds,
+                "sp_odds": entry.sp_odds,
                 "weight_kg": entry.weight_kg,
+                "rating": entry.rating,
+                "gear": entry.gear,
+                "body_weight_kg": entry.body_weight_kg,
+                "body_weight_delta": entry.body_weight_delta,
+                "barrier": entry.barrier,
                 "jockey_name": jockey.name if jockey else None,
                 "race_id": race.id,
             }

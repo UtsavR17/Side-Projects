@@ -9,6 +9,14 @@ function ensembleOf(entry: Entry) {
   return entry.predictions.find((p) => p.model_name === "ensemble");
 }
 
+/** True when the race has official MTC extras (dividends/sectionals) to show. */
+function hasOfficialExtras(race: RaceDetail) {
+  return (
+    Object.keys(race.tote_dividends ?? {}).length > 0 ||
+    Object.keys(race.sectional_times ?? {}).length > 0
+  );
+}
+
 function ExplanationList({ entry }: { entry: Entry }) {
   const pred = ensembleOf(entry);
   if (!pred || pred.explanations.length === 0) {
@@ -49,10 +57,13 @@ export default async function RaceDetailPage({
         Race {race.race_no} — {race.race_name ?? race.venue}
       </h1>
       <p className="subtitle">
-        {fmtDate(race.date)} {fmtTime(race.date)} · {race.venue} ·{" "}
+        {race.meeting_no ? `Meeting ${race.meeting_no} · ` : ""}
+        {fmtDate(race.date)} {race.race_time_label ?? fmtTime(race.date)} · {race.venue} ·{" "}
         {race.distance_m ? `${race.distance_m}m` : "distance TBC"} ·{" "}
         {race.race_class ?? "class TBC"} · going: {race.track_condition ?? "TBC"}
         {race.weather ? ` · weather: ${race.weather}` : ""}
+        {race.prize ? ` · ${race.prize}` : ""}
+        {race.win_time_s ? ` · win time ${race.win_time_s.toFixed(2)}s` : ""}
       </p>
 
       {!anyPreds ? (
@@ -66,12 +77,16 @@ export default async function RaceDetailPage({
           <thead>
             <tr>
               <th className="num">Pred</th>
+              <th className="num">No</th>
               <th>Horse</th>
               <th>Jockey</th>
               <th>Trainer</th>
               <th className="num">Bar</th>
               <th className="num">Wt</th>
-              <th className="num">Odds</th>
+              <th className="num">Rtg</th>
+              <th>Gear</th>
+              <th className="num">Hwt</th>
+              <th className="num">SP</th>
               <th>Win prob</th>
               <th className="num">Place</th>
               <th className="num">Conf</th>
@@ -86,9 +101,13 @@ export default async function RaceDetailPage({
                   <td className="num">
                     {p ? <span className="badge blue">#{p.predicted_rank}</span> : "–"}
                   </td>
+                  <td className="num">{e.saddle_no ?? "–"}</td>
                   <td>
                     <Link href={`/horses/${e.horse_id}`}>{e.horse_name}</Link>
                     {e.scratched ? <span className="badge red">SCR</span> : null}
+                    {e.horse_external_id ? (
+                      <span className="muted small"> #{e.horse_external_id}</span>
+                    ) : null}
                   </td>
                   <td>
                     {e.jockey_id && e.jockey_name ? (
@@ -106,7 +125,21 @@ export default async function RaceDetailPage({
                   </td>
                   <td className="num">{e.barrier ?? "–"}</td>
                   <td className="num">{e.weight_kg ?? "–"}</td>
-                  <td className="num">{e.odds ? e.odds.toFixed(1) : "–"}</td>
+                  <td className="num">{e.rating ?? "–"}</td>
+                  <td className="small">{e.gear ?? "–"}</td>
+                  <td className="num">
+                    {e.body_weight_kg ?? "–"}
+                    {e.body_weight_delta ? (
+                      <span className={`small ${e.body_weight_delta > 0 ? "pos" : "neg"}`}>
+                        {" "}
+                        ({e.body_weight_delta > 0 ? "+" : ""}
+                        {e.body_weight_delta})
+                      </span>
+                    ) : null}
+                  </td>
+                  <td className="num">
+                    {e.result?.sp_odds ?? e.sp_odds ?? (e.odds ? e.odds.toFixed(1) : "–")}
+                  </td>
                   <td>
                     {p ? (
                       <>
@@ -139,6 +172,59 @@ export default async function RaceDetailPage({
           </tbody>
         </table>
       </div>
+
+      {hasOfficialExtras(race) ? (
+        <div className="grid cols-2 mt">
+          {Object.keys(race.tote_dividends ?? {}).length > 0 ? (
+            <div className="card">
+              <h3>Tote dividends</h3>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Pool</th>
+                    <th>Selection</th>
+                    <th className="num">Dividend</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(race.tote_dividends ?? {}).map(([pool, rows]) =>
+                    Object.entries(rows).map(([selection, amount]) => (
+                      <tr key={`${pool}-${selection}`}>
+                        <td>{pool}</td>
+                        <td>{selection}</td>
+                        <td className="num">{amount.toFixed(2)}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+          {Object.keys(race.sectional_times ?? {}).length > 0 ? (
+            <div className="card">
+              <h3>Sectional times</h3>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Mark</th>
+                    <th className="num">Time (s)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(race.sectional_times ?? {})
+                    .sort((a, b) => Number(b[0].replace("m", "")) - Number(a[0].replace("m", "")))
+                    .map(([mark, seconds]) => (
+                      <tr key={mark}>
+                        <td>{mark}</td>
+                        <td className="num">{seconds.toFixed(2)}</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <h2>Top factors (ensemble explanations)</h2>
       <div className="grid cols-2">

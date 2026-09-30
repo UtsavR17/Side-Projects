@@ -57,6 +57,7 @@ export default async function HorsePage({ params }: { params: Promise<{ id: stri
         {horse.sire ? `by ${horse.sire}` : ""}
         {horse.dam ? ` out of ${horse.dam}` : ""}
         {horse.foaling_year ? ` · foaled ${horse.foaling_year}` : ""}
+        {horse.external_id ? ` · MTC id ${horse.external_id}` : ""}
       </p>
 
       <div className="grid cols-3">
@@ -113,7 +114,11 @@ export default async function HorsePage({ params }: { params: Promise<{ id: stri
                 <th className="num">Dist</th>
                 <th>Going</th>
                 <th>Jockey</th>
-                <th className="num">Odds</th>
+                <th className="num">Bar</th>
+                <th className="num">SP</th>
+                <th className="num">Rtg</th>
+                <th>Gear</th>
+                <th className="num">Hwt</th>
                 <th className="num">Finish</th>
               </tr>
             </thead>
@@ -127,7 +132,22 @@ export default async function HorsePage({ params }: { params: Promise<{ id: stri
                   <td className="num">{f.distance_m ? `${f.distance_m}m` : "–"}</td>
                   <td>{f.track_condition ?? "–"}</td>
                   <td>{f.jockey_name ?? "–"}</td>
-                  <td className="num">{f.odds ? f.odds.toFixed(1) : "–"}</td>
+                  <td className="num">{f.barrier ?? "–"}</td>
+                  <td className="num">
+                    {f.sp_odds ?? (f.odds ? f.odds.toFixed(1) : "–")}
+                  </td>
+                  <td className="num">{f.rating ?? "–"}</td>
+                  <td className="small">{f.gear ?? "–"}</td>
+                  <td className="num">
+                    {f.body_weight_kg ?? "–"}
+                    {f.body_weight_delta ? (
+                      <span className={`small ${f.body_weight_delta > 0 ? "pos" : "neg"}`}>
+                        {" "}
+                        ({f.body_weight_delta > 0 ? "+" : ""}
+                        {f.body_weight_delta})
+                      </span>
+                    ) : null}
+                  </td>
                   <td className="num">
                     {f.finish_position ? (
                       <strong>{f.finish_position}</strong>
