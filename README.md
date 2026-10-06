@@ -30,8 +30,10 @@ backend/
   tests/               pytest suite (SQLite + in-memory cache fallback)
   seed_demo.py         SYNTHETIC demo data for local development
 docs/                  simulator-guide.md, data-import.md, data-sourcing-options.md,
-                       outreach-emails.md
+                       outreach-emails.md, mobile-guide.md
 tools/                 formedge-capture.js (browser capture bookmarklet)
+mobile/                Flutter app (Prompt E) — read-only client + local cache
+.github/workflows/     CI: pytest + next build + flutter analyze/test
 frontend/              Next.js (App Router, ISR revalidate=300) dashboard
 docker-compose.yml     api + worker + postgres + redis + web
 ```
@@ -197,8 +199,23 @@ npm install
 npm run dev            # http://localhost:3000 (API at localhost:8000)
 ```
 
+Mobile (Flutter ≥ 3.29, Android SDK or Chrome):
+
+```bash
+cd mobile
+flutter pub get
+flutter run            # default API base http://10.0.2.2:8000 (emulator)
+```
+
+See [docs/mobile-guide.md](docs/mobile-guide.md) for the LAN/device setup,
+screens, caching design and the optional FCM push wiring.
+
 Run tests:
 
 ```bash
-cd backend && python -m pytest -q
+cd backend && python -m pytest -q     # API, pipeline, ML, importers
+cd frontend && npm run build          # type-checks + prerender
+cd mobile && flutter analyze && flutter test
 ```
+
+CI (`.github/workflows/ci.yml`) runs all three on every push.

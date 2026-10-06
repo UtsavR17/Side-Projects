@@ -17,6 +17,7 @@ from app.routers import (
     auth,
     events,
     horses,
+    me,
     notifications,
     people,
     predictions,
@@ -80,6 +81,7 @@ app.include_router(horses.router)
 app.include_router(people.router)
 app.include_router(predictions.router)
 app.include_router(notifications.router)
+app.include_router(me.router)
 app.include_router(simulator.router)
 app.include_router(admin.router)
 app.include_router(events.router)

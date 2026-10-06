@@ -31,6 +31,19 @@ out/
 npm-debug.log*
 *.log
 
+# Flutter / Dart
+mobile/.dart_tool/
+mobile/build/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+mobile/android/.gradle/
+mobile/android/local.properties
+mobile/ios/Pods/
+mobile/ios/.symlinks/
+mobile/ios/Flutter/ephemeral/
+mobile/*.iml
+*.g.dart
+
 # IDE / OS
 .vscode/
 .idea/
