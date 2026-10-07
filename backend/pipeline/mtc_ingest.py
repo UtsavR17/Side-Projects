@@ -164,6 +164,11 @@ def ingest_mtc_race(db: Session, parsed: dict, source_label: str = "",
 
     if stats["results_written"]:
         race.status = RACE_COMPLETED
+    elif when < datetime.utcnow():
+        # The meeting has already run but this document (a nomination/preview
+        # card) carries no finish positions — mark it done so it leaves the
+        # upcoming queues; results can still be attached by a later import.
+        race.status = RACE_COMPLETED
 
     db.commit()
     logger.info("mtc import %s -> %s", source_label or "inline", stats)

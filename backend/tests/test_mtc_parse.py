@@ -106,6 +106,77 @@ def test_parse_mtc_race_page_reads_sectional_table():
                                          "600m": 37.72, "400m": 26.93}
 
 
+NOMINATION_HTML = """
+<html><head>
+<meta property="og:url" content="https://www.mtcjockeyclub.com/form-guide/fixtures/395/R2">
+<title>Horse Racing | Racing News | Betting | Mauritius Turf Club | Meeting 18 |
+Princess Margaret Cup G1 - 1400M |  | Saturday 10 October 2026 | Fixtures</title>
+</head><body>
+<div>Race</div><div>Distance</div><div>1365m</div>
+<div>Race Class</div><div>BM31 </div>
+<div>Start Time</div><div>13:05</div>
+<div>STAKE MONEY: Rs 200000</div>
+<table class="race-card-mtc">
+<tr><th></th><th>Tab No</th><th>Horse</th><th>Trainer Jockey</th><th>Equip</th>
+    <th>HWT</th><th>BP</th><th>Weight</th><th>Rating</th></tr>
+<tr>
+  <td></td><td>1</td>
+  <td><span><a href="https://www.mtcjockeyclub.com/horse/global-dollar/2012345">GLOBAL DOLLAR</a></span></td>
+  <td class="trainer-data"><div><span>SM MAHADIA</span>
+      <span title="AQUA STALLIONS">(<span>AQUA STALLIONS</span>)</span></div></td>
+  <td>STX * Previous Gear: XA Current Gear: STX</td>
+  <td>0 (-494) Last Run HWT: 494 Current HWT: 0</td>
+  <td></td><td>61.0</td><td>31</td>
+</tr>
+<tr>
+  <td></td><td>2</td>
+  <td><span><a href="https://www.mtcjockeyclub.com/horse/carnarvon/2012346">CARNARVON</a></span></td>
+  <td class="trainer-data"><div><span>J AWOTAR</span></div></td>
+  <td>XA</td><td>0 (-491) Last Run HWT: 491 Current HWT: 0</td>
+  <td></td><td>60.5</td><td>30</td>
+</tr>
+</table></body></html>
+"""
+
+
+def test_parse_nomination_card():
+    """Upcoming race cards: og:url carries the race number, no results yet.
+
+    Structure mirrors the saved 'Meeting 18 / Saturday 10 October 2026' pages.
+    """
+    parsed, warnings = parse_mtc_race_page(NOMINATION_HTML)
+    assert warnings == []
+    assert parsed["race_no"] == 2              # from og:url, never the R1..R8 nav
+    assert parsed["meeting_no"] == 18
+    assert parsed["date"].date().isoformat() == "2026-10-10"
+    assert parsed["distance_m"] == 1365
+    assert parsed["race_class"] == "BM31"      # must not swallow "Start Time 13"
+    assert parsed["race_time_label"] == "13:05"
+    assert parsed["tote_dividends"] == {}
+    assert parsed["sectional_times"] == {}
+
+    first, second = parsed["runners"]
+    assert first["saddle_no"] == 1             # from the Tab No column
+    assert first["horse"] == "GLOBAL DOLLAR"
+    assert first["external_id"] == "2012345"
+    assert first["trainer"] == "SM MAHADIA"
+    assert first["jockey"] is None             # the stable span is not a jockey
+    assert first["gear"] == "STX *"            # gear-change text stripped
+    assert first["body_weight_kg"] is None     # 0 = not yet weighed
+    assert first["body_weight_delta"] is None
+    assert first["weight_kg"] == pytest.approx(61.0)
+    assert first["rating"] == 31
+    assert first["finish_position"] is None
+    assert second["jockey"] is None
+
+
+def test_nomination_card_class_with_plus_and_other_race_no():
+    html = NOMINATION_HTML.replace("BM31", "Handicap 55+").replace("/395/R2", "/394/R6")
+    parsed, _ = parse_mtc_race_page(html)
+    assert parsed["race_class"] == "Handicap 55+"
+    assert parsed["race_no"] == 6
+
+
 def test_parse_mtc_result_pdf_layout_columns():
     parsed, warnings = parse_mtc_result_pdf(PDF_TEXT)
     assert warnings == []

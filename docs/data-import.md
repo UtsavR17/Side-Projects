@@ -92,8 +92,24 @@ Both are detected automatically (`kind: mtc-html` / `mtc-pdf`) and are
 **idempotent** — importing the HTML page and then the PDF for the same race
 updates the same rows rather than duplicating them.
 
+The same race-page parser also handles **nomination cards / fixtures pages**
+(upcoming race cards, where runners have no finish positions yet):
+
+- the race number comes from the card's `og:url` (`…/fixtures/395/R2` → race 2),
+  never from the `R1…R8` navigation links;
+- official **rating, weight, gear, Tab No (saddle), trainer/stable and MTC horse
+  id** are captured — no jockey is invented for cards that don't list one;
+- a card whose **meeting date has already passed** marks the race `completed`
+  (it leaves the upcoming queue), while keeping `finish_position: NULL` so real
+  results can still be imported later;
+- because the card carries official ratings, debutant Elo is seeded from them at
+  feature time instead of scoring the whole field at a flat 1500 — nomination
+  predictions differ by ability rather than staying uniform.
+
 ```powershell
-# from the repo root — your saved files
+# from the repo root — a folder expands to every HTML/CSV/PDF/TXT inside it
+.\run-pipeline.ps1 import ".\Horses data\10 0ct"
+# or explicit globs / files
 .\run-pipeline.ps1 import ".\Horses data\*.pdf" ".\Horses data\*.html"
 ```
 

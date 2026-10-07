@@ -73,6 +73,36 @@ def test_import_mtc_race_page_is_idempotent(db):
     assert len(db.scalars(select(Trainer)).all()) == 3
 
 
+def test_past_nomination_marks_completed_future_stays_scheduled(db):
+    """A card whose meeting has run leaves the upcoming queue even though the
+    document carries no finish positions (results can arrive later)."""
+
+    def card(race_no: int, date_line: str) -> str:
+        return f"""
+        <html><head>
+        <meta property="og:url" content="https://www.mtcjockeyclub.com/form-guide/fixtures/394/R{race_no}">
+        <title>Horse Racing | Mauritius Turf Club | Meeting 17 | {date_line} | Fixtures</title>
+        </head><body>
+        <div>Race Class</div><div>BM31 </div><div>Start Time</div><div>13:05</div>
+        <table class="race-card-mtc">
+        <tr><th></th><th>Tab No</th><th>Horse</th><th>Trainer Jockey</th><th>Equip</th>
+            <th>HWT</th><th>BP</th><th>Weight</th><th>Rating</th></tr>
+        <tr><td></td><td>1</td><td><span>OLD TIMER</span></td>
+            <td><span>SM MAHADIA</span></td><td>NA</td><td>0 (-500)</td>
+            <td></td><td>61.0</td><td>31</td></tr>
+        </table></body></html>
+        """
+
+    import_text(db, card(6, "Sunday 4 October 2020"), kind="auto", label="past.html")
+    import_text(db, card(7, "Saturday 10 October 2099"), kind="auto", label="future.html")
+
+    races = {r.race_no: r for r in db.scalars(select(Race)).all()}
+    assert races[6].status == "completed"       # meeting already ran
+    assert races[6].date.year == 2020
+    assert races[7].status == "scheduled"       # not yet run
+    assert db.scalars(select(RaceResult)).all() == []   # nothing invented
+
+
 def test_import_mtc_result_pdf_text(db):
     stats = import_text(db, PDF_TEXT, kind="auto", label="Race-Result-392-R1.pdf")
     assert stats["kind"] == "mtc-pdf"

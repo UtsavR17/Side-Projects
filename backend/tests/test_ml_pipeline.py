@@ -64,6 +64,44 @@ def test_full_ml_cycle(seeded):
     assert ens.by_distance_bucket and ens.by_track_condition
 
 
+def test_debutant_elo_seeded_from_official_rating(db):
+    """Nominations publish ratings before the race; debutants must not all
+    score at a flat 1500 (that made every nomination prediction uniform)."""
+    from datetime import datetime
+
+    from app.models import Horse, RaceEntry, RACE_SCHEDULED
+    from pipeline.ml.dataset import ELO_START, FeatureBuilder
+
+    race = Race(date=datetime(2099, 10, 10, 12, 30), race_no=1, venue="Champ de Mars",
+                distance_m=1450, status=RACE_SCHEDULED)
+    db.add(race)
+    db.flush()
+    horses = [Horse(name=n, name_norm=n.lower()) for n in ("ALFA", "BETA", "GAMMA")]
+    db.add_all(horses)
+    db.flush()
+    entries = [
+        RaceEntry(race_id=race.id, horse_id=horses[0].id, rating=85, weight_kg=58.0),
+        RaceEntry(race_id=race.id, horse_id=horses[1].id, rating=55, weight_kg=58.0),
+        RaceEntry(race_id=race.id, horse_id=horses[2].id),          # rating unknown
+    ]
+    db.add_all(entries)
+    db.flush()
+
+    builder = FeatureBuilder()
+    rows = {r["horse_id"]: r for r in builder.race_rows(race, entries)}
+    top = rows[horses[0].id]["elo_rating"]
+    low = rows[horses[1].id]["elo_rating"]
+    assert top > ELO_START > low
+    assert top - ELO_START == pytest.approx((ELO_START - low))     # symmetric
+    assert top == pytest.approx(ELO_START + (85 - 70) * 6.0)       # mean = 70
+    assert rows[horses[2].id]["elo_rating"] == ELO_START           # unrated -> flat
+
+    # A field with no ratings at all keeps the classic flat start.
+    entries[0].rating = entries[1].rating = None
+    flat = builder.race_rows(race, entries)
+    assert all(r["elo_rating"] == ELO_START for r in flat)
+
+
 def test_history_leaderboard_and_simulator_endpoints(client, seeded):
     from pipeline.ml.predict import stage_predict
     from pipeline.ml.train import stage_train

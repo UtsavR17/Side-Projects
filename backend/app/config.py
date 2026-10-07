@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     # --- API ---
     app_name: str = "FormEdge API"
     environment: str = "development"
-    database_url: str = "postgresql+psycopg://formedge:formedge@localhost:5432/formedge"
+    database_url: str = "postgresql+psycopg://formedge:formedge@localhost:5432/formedge?connect_timeout=3"
     redis_url: str = "redis://localhost:6379/0"
     cache_ttl_seconds: int = 300
 

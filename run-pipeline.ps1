@@ -2,6 +2,7 @@
 #   .\run-pipeline.ps1                           # full cycle
 #   .\run-pipeline.ps1 train predict             # selected stages
 #   .\run-pipeline.ps1 import .\incoming\*.csv   # import CSVs/pages, then refresh
+#   .\run-pipeline.ps1 import "Horses data"     # a folder imports every page in it
 #   .\run-pipeline.ps1 watch                     # import whatever is in .\incoming now
 # `scrape`/`weather` need internet access; failures are non-fatal.
 param([Parameter(ValueFromRemainingArguments = $true)][string[]]$CliArgs)

@@ -48,9 +48,15 @@ def _clean(text: str | None) -> str:
 
 
 def parse_hwt(cell_text: str) -> tuple[float | None, float | None]:
-    """'503 (+17)' -> (503.0, 17.0); '465' -> (465.0, None)."""
+    """'503 (+17)' -> (503.0, 17.0); '465' -> (465.0, None).
+
+    Nomination cards show 'HWT: 0 (-466)' when the horse is not yet weighed
+    — the 0 means *unknown*, not zero kilos, so both values are dropped.
+    """
     text = _clean(cell_text)
     total = _num(text)
+    if total == 0:
+        return None, None
     delta = None
     m = re.search(r"\(\s*([+-]?\d+(?:\.\d+)?)\s*\)", text)
     if m:
@@ -76,6 +82,13 @@ def _split_trainer_jockey(cell) -> tuple[str | None, str | None, float | None]:
         spans.append(text)
     trainer = spans[0] if spans else None
     jockey_raw = spans[1] if len(spans) > 1 else None
+    # Nomination cards put the trainer's stable in the second span —
+    # "(PAUL FOO KUNE STABLE)" — which is not a jockey.
+    if jockey_raw and (
+        jockey_raw.startswith("(")
+        or re.search(r"\b(STABLE|STALLIONS?)\b", jockey_raw, re.I)
+    ):
+        jockey_raw = None
     claim = None
     jockey = jockey_raw
     if jockey_raw:
@@ -87,7 +100,24 @@ def _split_trainer_jockey(cell) -> tuple[str | None, str | None, float | None]:
 
 
 def _race_no_from_soup(soup: BeautifulSoup, html: str) -> int | None:
-    for pattern in (r'data-tab-no="(\d+)"', r"Race\s+(\d+)\s*-", r"Race\s+(\d+)\b"):
+    """Identify which race of the meeting this saved page shows.
+
+    The page's own URL is authoritative: every full-page save carries an
+    og:url like `.../form-guide/fixtures/395/R3`, and the same absolute URL
+    repeats throughout the document (share links, anchors). The nav's relative
+    `R1..R8` tabs appear in *every* save, so they can never disambiguate.
+    Fallbacks cover trimmed fixtures without a canonical URL.
+    """
+    og = re.search(r'<meta property="og:url" content="([^"]+)"', html)
+    m = re.search(r"form-guide/fixtures/\d+/R(\d+)\b", og.group(1)) if og else None
+    if m and 1 <= int(m.group(1)) <= 15:
+        return int(m.group(1))
+    absolute = re.findall(r"https?://[^\s\"']*form-guide/fixtures/\d+/R(\d+)\b", html)
+    if absolute:
+        value = max(set(absolute), key=absolute.count)   # self-links dominate
+        if 1 <= int(value) <= 15:
+            return int(value)
+    for pattern in (r"Race\s+(\d+)\s*-", r"Race\s+(\d+)\b", r'data-tab-no="(\d+)"'):
         m = re.search(pattern, html)
         if m:
             value = int(m.group(1))
@@ -188,6 +218,7 @@ def _parse_sectionals_from_soup(soup: BeautifulSoup) -> dict:
 
 HEADER_KEYS = (
     ("fp", ("fp",)),
+    ("saddle", ("tab",)),
     ("horse", ("horse",)),
     ("people", ("trainer", "jockey")),
     ("gear", ("equip",)),
@@ -464,11 +495,25 @@ def parse_mtc_race_page(html: str, default_date=None) -> tuple[dict, list[str]]:
     date_match = re.search(r"(\d{1,2}\s+[A-Z][a-z]+\s+\d{4})", flat)
     if date_match:
         date = parse_date(date_match.group(1))
+    # nomination/result pages carry an ISO timestamp even when the visible
+    # headline date is awkward to regex (e.g. all-caps "10 OCTOBER 2026")
+    if date is None:
+        iso = re.search(r'data-race-date="(\d{4}-\d{2}-\d{2})', html)
+        if iso:
+            date = parse_date(iso.group(1))
     meeting = MEETING_LINE.search(flat)
     distance_match = re.search(r"Distance\s*(\d{3,4})\s*m", flat, re.I)
-    class_match = re.search(r"Race Class\s*([0-9]{1,3}\s*-\s*[0-9]{1,3}|[A-Z0-9 \-/]{2,24})", flat, re.I)
+    # stop the class at the next label — otherwise 'BM31 Start Time 13:05'
+    # leaks 'Start Time 13' into the class on nomination pages
+    class_match = re.search(
+        r"Race Class\s*([0-9]{1,3}\s*-\s*[0-9]{1,3}|[A-Z0-9][A-Z0-9 \-/+]{1,12}?)"
+        r"(?=\s+(?:Start Time|Prize|STAKE|Adjusted|Rails|WinTime)\b|$)",
+        flat, re.I,
+    )
     win_time_match = re.search(r"WinTime:?\s*(\d+:\d+(?:\.\d+)?)", flat, re.I)
-    time_label = re.search(r"Race\s+\d+\s*-\s*(\d{1,2}:\d{2})", flat)
+    # nomination cards say "Start Time 12:30"; result pages say "Race 3 - 13:05"
+    time_label = re.search(r"Start Time\s*(\d{1,2}:\d{2})", flat) or re.search(
+        r"Race\s+\d+\s*-\s*(\d{1,2}:\d{2})", flat)
 
     labels = _column_map(table)
     runners: list[dict] = []
@@ -498,16 +543,19 @@ def parse_mtc_race_page(html: str, default_date=None) -> tuple[dict, list[str]]:
             cells[labels["people"]] if "people" in labels and labels["people"] < len(cells) else None
         )
         body_weight, body_delta = parse_hwt(cell_text("hwt"))
+        # nomination cards append the gear-change text to the cell
+        gear = re.split(r"\s+(?:Previous|Current)\s+Gear:", cell_text("gear"))[0].strip() or None
+        saddle = _int(cell_text("saddle")) if "saddle" in labels else None
 
         runners.append({
             "finish_position": _int(cell_text("fp")) if "fp" in labels else None,
-            "saddle_no": int(prefix.group(1)) if prefix else None,
+            "saddle_no": saddle if saddle is not None else (int(prefix.group(1)) if prefix else None),
             "horse": SADDLE_PREFIX.sub("", raw_name).strip(),
             "external_id": external_id,
             "trainer": trainer,
             "jockey": jockey,
             "claim_kg": claim,
-            "gear": cell_text("gear") or None,
+            "gear": gear,
             "body_weight_kg": body_weight,
             "body_weight_delta": body_delta,
             "barrier": _int(cell_text("bp")),

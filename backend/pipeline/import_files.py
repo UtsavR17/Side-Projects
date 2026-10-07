@@ -320,6 +320,21 @@ def import_bytes(db: Session, data: bytes, kind: str = "auto",
                        default_date=default_date, label=label)
 
 
+def _expand_paths(raw_path: str) -> list[Path]:
+    """A folder argument imports every saved page/CSV/PDF inside it.
+
+    Directory scanning deliberately skips .txt (paste scratch files) and the
+    asset folders browsers create next to "save whole page" HTML.
+    """
+    path = Path(raw_path)
+    if path.is_dir():
+        return sorted(
+            p for p in path.rglob("*")
+            if p.is_file() and p.suffix.lower() in {".html", ".htm", ".csv", ".pdf"}
+        )
+    return [path]
+
+
 def stage_import(paths: list[str], kind: str = "auto",
                  default_date: datetime | None = None) -> dict:
     """Import a set of saved pages / CSVs / PDFs through the shared ingest path."""
@@ -327,15 +342,20 @@ def stage_import(paths: list[str], kind: str = "auto",
     results = []
     try:
         for raw_path in paths:
-            path = Path(raw_path)
-            if not path.exists():
-                results.append({"file": str(path), "error": "file not found"})
+            members = _expand_paths(raw_path)
+            if not members:
+                results.append({"file": raw_path,
+                                "error": "no importable files found"})
                 continue
-            outcome = import_bytes(db, path.read_bytes(), kind=kind,
-                                   default_date=default_date, label=path.name)
-            outcome["file"] = path.name
-            results.append(outcome)
-            logger.info("imported %s -> %s", path.name, outcome)
+            for path in members:
+                if not path.exists():
+                    results.append({"file": str(path), "error": "file not found"})
+                    continue
+                outcome = import_bytes(db, path.read_bytes(), kind=kind,
+                                       default_date=default_date, label=path.name)
+                outcome["file"] = path.name
+                results.append(outcome)
+                logger.info("imported %s -> %s", path.name, outcome)
         return {"files": results, "count": len(results)}
     finally:
         db.close()
@@ -346,7 +366,8 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         description="Import human-supplied race cards / results (CSV, saved HTML or PDF)."
     )
-    parser.add_argument("files", nargs="+", help="CSV or saved .html files to import")
+    parser.add_argument("files", nargs="+",
+                        help="CSV, saved .html/.pdf files, or folders containing them")
     parser.add_argument("--kind", default="auto",
                         choices=["auto", "fixtures-csv", "results-csv",
                                  "fixtures-html", "results-html",

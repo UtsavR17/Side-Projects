@@ -22,6 +22,11 @@ FEATURE_NAMES = [
 
 ELO_START = 1500.0
 ELO_K = 24.0
+# Official ratings are published before the race, so a horse with no race
+# history in the DB can be seeded from its rating relative to the field
+# instead of sitting at the flat 1500 start. Without this, nomination cards
+# (which carry ratings but no odds/jockeys yet) score every runner the same.
+ELO_RATING_PER_PT = 6.0
 
 
 def load_races(db: Session, completed_only: bool = True) -> list[Race]:
@@ -77,6 +82,8 @@ class FeatureBuilder:
         cond_idx = condition_index(race.track_condition)
 
         rows = []
+        rated = [e.rating for e in field if e.rating is not None]
+        rating_mean = (sum(rated) / len(rated)) if rated else None
         for e in field:
             st = self._h(e.horse_id)
             days = (race.date - st["last_date"]).days if st["last_date"] else None
@@ -88,6 +95,12 @@ class FeatureBuilder:
             j = self.jockey.get(e.jockey_id) if e.jockey_id else None
             t = self.trainer.get(e.trainer_id) if e.trainer_id else None
             market = (inv.get(e.id, 0.0) / total_inv) if total_inv > 0 else 1.0 / n
+
+            # Feature-time Elo: debutants start from their official rating
+            # (already known pre-race) rather than a flat 1500.
+            elo = st["elo"]
+            if st["runs"] == 0 and e.rating is not None and rating_mean is not None:
+                elo = ELO_START + (e.rating - rating_mean) * ELO_RATING_PER_PT
 
             rows.append({
                 "horse_id": e.horse_id, "entry_id": e.id,
@@ -105,7 +118,7 @@ class FeatureBuilder:
                 "dist_win_rate": d["wins"] / d["runs"] if d["runs"] else 0.0,
                 "cond_runs": c["runs"],
                 "cond_win_rate": c["wins"] / c["runs"] if c["runs"] else 0.0,
-                "elo_rating": st["elo"],
+                "elo_rating": elo,
                 "jockey_win_rate": (j["wins"] / j["runs"]) if j and j["runs"] else 0.0,
                 "trainer_win_rate": (t["wins"] / t["runs"]) if t and t["runs"] else 0.0,
                 "market_prob": market,
