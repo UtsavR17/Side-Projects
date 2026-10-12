@@ -2,7 +2,11 @@
 
 Races are streamed in chronological order; each row's features are computed
 strictly from history BEFORE that race, then the race's result is ingested.
-Distance- and track-condition-specific performance are explicit features (C.3).
+Distance- and track-condition-specific performance are explicit features (C.3),
+as are jockey/trainer strike rates, the joint jockey-trainer combo record
+(`combo_runs`/`combo_win_rate`), and a per-venue barrier-draw bias
+(`draw_bias`: place rate of this draw third at this venue minus the venue's
+overall place rate over prior races).
 """
 from __future__ import annotations
 
@@ -18,6 +22,7 @@ FEATURE_NAMES = [
     "dist_runs", "dist_win_rate", "cond_runs", "cond_win_rate",
     "elo_rating", "jockey_win_rate", "trainer_win_rate",
     "market_prob", "distance_m", "condition_index",
+    "combo_runs", "combo_win_rate", "draw_bias",
 ]
 
 ELO_START = 1500.0
@@ -27,6 +32,17 @@ ELO_K = 24.0
 # instead of sitting at the flat 1500 start. Without this, nomination cards
 # (which carry ratings but no odds/jockeys yet) score every runner the same.
 ELO_RATING_PER_PT = 6.0
+
+
+def draw_third(barrier: int | None, field_size: int) -> int | None:
+    """0 = inside draw, 1 = middle, 2 = outside — field-relative thirds.
+
+    Field-relative (not fixed 1-3/4-6/7-9) so the bucket means the same thing
+    for a 6-horse field and a 16-horse field. None when the draw is unknown.
+    """
+    if barrier is None or field_size < 2:
+        return None
+    return min(int((barrier - 1) * 3 / field_size), 2)
 
 
 def load_races(db: Session, completed_only: bool = True) -> list[Race]:
@@ -53,6 +69,9 @@ class FeatureBuilder:
         self.horse: dict[int, dict] = {}
         self.jockey: dict[int, dict] = {}
         self.trainer: dict[int, dict] = {}
+        self.combo: dict[tuple[int, int], dict] = {}
+        # venue -> {"thirds": {0/1/2: {"runs", "places"}}, "all": {...}}
+        self.barrier: dict[str, dict] = {}
 
     def _h(self, horse_id: int) -> dict:
         if horse_id not in self.horse:
@@ -94,7 +113,20 @@ class FeatureBuilder:
             avg_finish = (sum(st["finishes"]) / len(st["finishes"])) if st["finishes"] else None
             j = self.jockey.get(e.jockey_id) if e.jockey_id else None
             t = self.trainer.get(e.trainer_id) if e.trainer_id else None
+            combo = (self.combo.get((e.jockey_id, e.trainer_id))
+                     if e.jockey_id and e.trainer_id else None)
             market = (inv.get(e.id, 0.0) / total_inv) if total_inv > 0 else 1.0 / n
+
+            # Draw bias: place rate of this draw third at this venue vs the
+            # venue's overall place rate, over races BEFORE this one.
+            draw_bias = 0.0
+            third = draw_third(e.barrier, n)
+            venue = self.barrier.get(race.venue or "unknown")
+            if third is not None and venue and venue["all"]["runs"]:
+                bucket = venue["thirds"].get(third)
+                if bucket and bucket["runs"]:
+                    draw_bias = (bucket["places"] / bucket["runs"]
+                                 - venue["all"]["places"] / venue["all"]["runs"])
 
             # Feature-time Elo: debutants start from their official rating
             # (already known pre-race) rather than a flat 1500.
@@ -124,6 +156,10 @@ class FeatureBuilder:
                 "market_prob": market,
                 "distance_m": race.distance_m if race.distance_m else 1400,
                 "condition_index": cond_idx,
+                "combo_runs": combo["runs"] if combo else 0,
+                "combo_win_rate": (combo["wins"] / combo["runs"])
+                                   if combo and combo["runs"] else 0.0,
+                "draw_bias": round(draw_bias, 4),
             })
         return rows
 
@@ -169,6 +205,26 @@ class FeatureBuilder:
                     pc["runs"] += 1
                     if finish == 1:
                         pc["wins"] += 1
+
+            if e.jockey_id and e.trainer_id:
+                pc = self.combo.setdefault((e.jockey_id, e.trainer_id),
+                                           {"runs": 0, "wins": 0})
+                pc["runs"] += 1
+                if finish == 1:
+                    pc["wins"] += 1
+
+            third = draw_third(e.barrier, n)
+            if third is not None:
+                v = self.barrier.setdefault(
+                    race.venue or "unknown",
+                    {"thirds": {}, "all": {"runs": 0, "places": 0}},
+                )
+                b = v["thirds"].setdefault(third, {"runs": 0, "places": 0})
+                b["runs"] += 1
+                v["all"]["runs"] += 1
+                if finish is not None and finish <= 3:
+                    b["places"] += 1
+                    v["all"]["places"] += 1
 
 
 # ---------------------------------------------------------------------------

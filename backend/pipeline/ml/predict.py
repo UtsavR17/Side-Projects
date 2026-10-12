@@ -16,6 +16,7 @@ from app.models import (
     ModelPerformance,
     Prediction,
     PredictionExplanation,
+    RACE_COMPLETED,
     RACE_SCHEDULED,
     Race,
     RaceEntry,
@@ -152,13 +153,17 @@ def stage_predict(db: Session | None = None) -> dict:
                 total += written
                 predicted_races.append(race.id)
 
-        # Backfill: recent completed races with no predictions yet, replayed
-        # leak-free with builder_up_to(race date) so §9 accuracy tracking and
-        # the prediction-history views have substance from day one.
+        # Backfill: recent completed races — and past-scheduled races whose
+        # results have not been imported yet — with no predictions, replayed
+        # leak-free with builder_up_to(race date). The latter matters because
+        # the upcoming branch only scores dates within ~12h of now: a race that
+        # has passed but whose results page hasn't arrived yet would otherwise
+        # lose its predictions, making §9 accuracy tracking impossible when
+        # the result is finally imported.
         backfill_races = db.scalars(
             select(Race)
             .where(
-                Race.status == "completed",
+                Race.status.in_((RACE_COMPLETED, RACE_SCHEDULED)),
                 Race.date >= datetime.utcnow() - timedelta(days=120),
             )
             .order_by(Race.date.asc())

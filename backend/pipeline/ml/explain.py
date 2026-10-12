@@ -28,6 +28,9 @@ FACTOR_LABELS = {
     "cond_runs": "runs on this going", "jockey_win_rate": "jockey strike rate",
     "trainer_win_rate": "trainer strike rate", "market_prob_odds": "market odds",
     "distance_m": "race distance", "condition_index": "track condition",
+    "combo_runs": "prior jockey-trainer team-ups",
+    "combo_win_rate": "jockey-trainer strike rate",
+    "draw_bias": "barrier draw bias at this track",
     "days_since_last": "days since last race",
 }
 TOP_K = 5
