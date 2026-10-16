@@ -20,6 +20,7 @@ from app.models.users import (
     Notification,
     NotificationPreference,
     User,
+    WebPushSubscription,
 )
 
 # Race status constants live with Race but are re-exported for convenience.
@@ -45,6 +46,7 @@ __all__ = [
     "Notification",
     "DeviceToken",
     "DataQualityFlag",
+    "WebPushSubscription",
     "NOTIFICATION_CATEGORIES",
     "POSITIVE",
     "NEGATIVE",

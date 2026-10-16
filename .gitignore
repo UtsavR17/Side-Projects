@@ -13,6 +13,7 @@ htmlcov/
 backend/raw_cache/
 backend/ml_artifacts/
 backend/incoming/
+backend/vapid_private.pem
 incoming/
 backend/uvicorn.*.log
 Horses data/

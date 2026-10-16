@@ -42,6 +42,11 @@ class Settings(BaseSettings):
     fcm_project_id: str = ""
     fcm_credentials_json: str = ""
 
+    # --- Notifications (optional Web Push; keygen: python gen_vapid.py) ---
+    web_push_enabled: bool = False
+    vapid_private_key: str = ""  # path to a PEM file, or inline PEM text
+    vapid_claims_email: str = "mailto:admin@example.com"
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

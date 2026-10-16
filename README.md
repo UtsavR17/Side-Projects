@@ -4,8 +4,7 @@ Personal intelligence platform for Mauritius (MTC) horse racing: automated data
 ingestion, rich profiles, an ensemble ML pipeline with stored explanations,
 prediction-accuracy tracking, and a fast cache-first API + web dashboard.
 
-Built from the master plan in `horse-racing-system-plan.md` (prompts A–D + F;
-Flutter mobile deferred).
+Built from the master plan in `horse-racing-system-plan.md` (prompts A–F).
 
 ## Repository layout
 
@@ -15,7 +14,8 @@ backend/
     models/            SQLAlchemy schema (all §5 entities + prefs + flags)
     routers/           races, horses, jockeys/trainers, predictions,
                        leaderboard, notifications, simulator, admin, SSE
-    services/          serializers, profiles, form stats, notifications, FCM
+    services/          serializers, profiles, form stats, notifications, FCM,
+                       webpush_send (Web Push)
   pipeline/            background stages (NEVER triggered by API requests)
     scrape_mtc.py      polite fixtures/results scraper + ingestion
     import_files.py    human-in-the-loop import (CSV or saved HTML pages)
@@ -141,9 +141,11 @@ Monday digest).
 - ✅ Real-data ingestion: human-in-the-loop CSV / saved-HTML import (CLI + admin
   API), idempotent with data-quality flagging; `evaluate` upserts and re-scores
   late-arriving results
-- ⏳ Deferred: Flutter mobile (Prompt E), Web Push, jockey/trainer combo
-  features, track-bias detection, media sentiment, NN model; automated scraping
-  of MTC pending an official feed or permission
+- ✅ Web Push: RFC 8291/8292 browser notifications behind the header bell
+  (one-time `python gen_vapid.py` + three `.env` lines; dead endpoints are
+  pruned automatically, and it no-ops until configured)
+- ⏳ Deferred: going/sectional track-bias slices, media sentiment, NN model;
+  automated scraping of MTC pending an official feed or permission
 
 ## Quickstart (Docker — recommended)
 

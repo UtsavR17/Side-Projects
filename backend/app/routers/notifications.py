@@ -1,10 +1,18 @@
-"""Notification reads + preference management (auth required)."""
+"""Notification reads + preference management + Web Push subscriptions (auth required)."""
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.db import get_db
-from app.models import NOTIFICATION_CATEGORIES, Notification, NotificationPreference, User
+from app.models import (
+    NOTIFICATION_CATEGORIES,
+    Notification,
+    NotificationPreference,
+    User,
+    WebPushSubscription,
+)
 from app.schemas import NotificationPrefsIn, NotificationPrefsOut
 from app.security import get_current_user
 
@@ -98,3 +106,88 @@ def set_prefs(
     db.commit()
     db.refresh(prefs)
     return prefs
+
+
+# --------------------------------------------------------------------- Web Push
+class PushKeysIn(BaseModel):
+    p256dh: str = Field(min_length=20, max_length=400)
+    auth: str = Field(min_length=8, max_length=200)
+
+
+class PushSubscribeIn(BaseModel):
+    endpoint: str = Field(min_length=8, max_length=2000)
+    keys: PushKeysIn
+
+    @field_validator("endpoint")
+    @classmethod
+    def _http_endpoint(cls, v: str) -> str:
+        if not v.startswith(("https://", "http://")):
+            raise ValueError("endpoint must be an http(s) URL")
+        return v
+
+
+class PushUnsubscribeIn(BaseModel):
+    endpoint: str = Field(min_length=8, max_length=2000)
+
+
+@router.get("/push/vapid-public-key")
+def vapid_public_key():
+    """Browser `applicationServerKey` — public info, so no auth. 503 while
+    web push is disabled or the VAPID key has not been generated yet."""
+    from app.services.webpush_send import vapid_public_key_b64
+
+    if not settings.web_push_enabled:
+        raise HTTPException(503, "Web push is disabled on this server")
+    key = vapid_public_key_b64()
+    if key is None:
+        raise HTTPException(503, "VAPID key not configured (run: python gen_vapid.py)")
+    return {"key": key}
+
+
+@router.post("/push/subscribe")
+def push_subscribe(
+    body: PushSubscribeIn,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Store (or refresh) this user's browser push subscription (RFC 8292)."""
+    row = db.scalar(
+        select(WebPushSubscription).where(WebPushSubscription.endpoint == body.endpoint)
+    )
+    if row is None:
+        row = WebPushSubscription(
+            user_id=user.id,
+            endpoint=body.endpoint,
+            p256dh=body.keys.p256dh,
+            auth=body.keys.auth,
+        )
+        db.add(row)
+    else:
+        # same endpoint re-registered (new sign-in / browser reset)
+        row.user_id = user.id
+        row.p256dh = body.keys.p256dh
+        row.auth = body.keys.auth
+        row.failure_count = 0
+        row.last_error = None
+    db.commit()
+    db.refresh(row)
+    return {"subscribed": True, "id": row.id}
+
+
+@router.post("/push/unsubscribe")
+def push_unsubscribe(
+    body: PushUnsubscribeIn,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Stop pushing to a browser subscription (idempotent)."""
+    row = db.scalar(
+        select(WebPushSubscription).where(
+            WebPushSubscription.endpoint == body.endpoint,
+            WebPushSubscription.user_id == user.id,
+        )
+    )
+    if row is not None:
+        db.delete(row)
+        db.commit()
+    return {"removed": row is not None}

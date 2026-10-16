@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import "./globals.css";
 import LiveUpdates from "@/components/LiveUpdates";
+import PushToggle from "@/components/PushToggle";
 
 export const metadata: Metadata = {
   title: "FormEdge — Racing Intelligence",
@@ -33,6 +34,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </Link>
             ))}
           </nav>
+          <PushToggle />
         </header>
         <main className="container">{children}</main>
         <footer className="footer">

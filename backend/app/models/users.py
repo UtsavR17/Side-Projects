@@ -91,6 +91,27 @@ class DeviceToken(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class WebPushSubscription(Base):
+    """Browser push endpoints (RFC 8292) — populated by the web dashboard.
+
+    The Web Push twin of DeviceToken (FCM): delivery is best-effort and
+    endpoints that answer 404/410 are pruned automatically.
+    """
+
+    __tablename__ = "web_push_subscriptions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    endpoint: Mapped[str] = mapped_column(Text, unique=True, index=True)
+    p256dh: Mapped[str] = mapped_column(String(400))  # subscriber public key
+    auth: Mapped[str] = mapped_column(String(200))    # auth secret
+    failure_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class DataQualityFlag(Base):
     """Raised by the scrape/clean stages; reviewed in the admin view (§11)."""
 

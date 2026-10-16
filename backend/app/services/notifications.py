@@ -43,6 +43,7 @@ def notify_users(
     users = db.scalars(query).all()
 
     created = 0
+    notified_ids: list[int] = []
     for user in users:
         if not _pref_enabled(user, category):
             continue
@@ -55,6 +56,7 @@ def notify_users(
         )
         db.add(note)
         created += 1
+        notified_ids.append(user.id)
     db.commit()
 
     # Push a live event so open SSE clients update immediately.
@@ -64,6 +66,7 @@ def notify_users(
     )
     if created:
         _send_fcm_push(category, title, body)
+        _send_web_push(db, notified_ids, title, body)
     return created
 
 
@@ -102,3 +105,17 @@ def _send_fcm_push(category: str, title: str, body: str) -> None:
         send_broadcast(category, title, body)
     except Exception as exc:  # noqa: BLE001 — notifications must never break the pipeline
         logger.warning("FCM push failed: %s", exc)
+
+
+def _send_web_push(db: Session, user_ids: list[int], title: str, body: str) -> None:
+    """Best-effort Web Push to browsers (RFC 8291) — no-op unless
+    WEB_PUSH_ENABLED. Same contract as _send_fcm_push: never raise."""
+    if not settings.web_push_enabled:
+        return
+    try:
+        # Lazy import so pywebpush stays an optional dependency.
+        from app.services.webpush_send import send_web_push
+
+        send_web_push(db, user_ids, title, body)
+    except Exception as exc:  # noqa: BLE001 — notifications must never break the pipeline
+        logger.warning("Web Push failed: %s", exc)
